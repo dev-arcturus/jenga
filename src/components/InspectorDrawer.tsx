@@ -105,7 +105,7 @@ export default function InspectorDrawer() {
                   <p className="text-[10px] text-slate-500 mt-1">
                     In: <span className="text-slate-400">{selectedTower.argument_id}</span>
                     {' · '}
-                    <span className="italic">{selectedTower.conclusion.slice(0, 50)}{selectedTower.conclusion.length > 50 ? '…' : ''}</span>
+                    <span className="italic">{selectedTower.conclusion}</span>
                   </p>
                 )}
               </div>

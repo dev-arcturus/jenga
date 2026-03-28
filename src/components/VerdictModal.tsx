@@ -323,7 +323,7 @@ export default function VerdictModal() {
                           <span className="font-mono font-bold text-blue-300 flex-shrink-0">
                             {nums ? `${nums.towerIdx}.${nums.blockIdx}` : blockId}
                           </span>
-                          <span className="text-slate-400">{block!.claim_text.slice(0, 100)}</span>
+                          <span className="text-slate-400">{block!.claim_text}</span>
                           <span className="text-slate-600 flex-shrink-0">used by {towerIds.length} towers</span>
                         </div>
                       );
@@ -339,7 +339,7 @@ export default function VerdictModal() {
                     {towerGraph!.shared_blocks.map(sb => (
                       <div key={sb.block_id} className="flex items-start gap-2 text-xs">
                         <span className="font-mono font-bold text-blue-300 flex-shrink-0">{sb.block_id}</span>
-                        <span className="text-slate-400">{sb.claim_text.slice(0, 100)}</span>
+                        <span className="text-slate-400">{sb.claim_text}</span>
                         <span className="text-slate-600 flex-shrink-0">in {sb.used_by.join(', ')}</span>
                       </div>
                     ))}

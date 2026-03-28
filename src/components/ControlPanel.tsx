@@ -121,9 +121,12 @@ function BlockRow({ block, label, isSelected, onSelect }: {
         isSelected ? 'bg-blue-950/40 ring-1 ring-blue-700/50' : 'hover:bg-slate-800/30'
       }`}
     >
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => onSelect(block.block_id)}
-        className="w-full text-left px-2.5 py-1.5 flex items-start gap-2"
+        onKeyDown={e => { if (e.key === 'Enter') onSelect(block.block_id); }}
+        className="w-full text-left px-2.5 py-1.5 flex items-start gap-2 cursor-pointer"
       >
         {/* Number badge */}
         <span className={`flex-shrink-0 w-6 h-5 rounded text-[9px] font-bold font-mono flex items-center justify-center mt-px ${
@@ -149,7 +152,7 @@ function BlockRow({ block, label, isSelected, onSelect }: {
             </span>
             {stateTag(block.state)}
           </div>
-          <p className="text-[10px] text-slate-300 leading-snug line-clamp-2">
+          <p className="text-[10px] text-slate-300 leading-snug ">
             {block.claim_text}
           </p>
         </div>
@@ -163,7 +166,7 @@ function BlockRow({ block, label, isSelected, onSelect }: {
             <path d="M3 5l3 3 3-3" />
           </svg>
         </button>
-      </button>
+      </div>
 
       {/* Expanded detail */}
       <AnimatePresence>
@@ -262,7 +265,7 @@ function TowerCard({ tower, towerIdx, blockNumberMap, selectedBlockId, onSelect 
             {tower.blocks.length} blocks
           </span>
         </div>
-        <p className="text-[10px] text-slate-400 leading-snug line-clamp-2">{tower.conclusion}</p>
+        <p className="text-[10px] text-slate-400 leading-snug ">{tower.conclusion}</p>
         <div className="mt-1.5 h-1 rounded-full bg-slate-800/60 overflow-hidden">
           <motion.div
             animate={{ width: `${health * 100}%` }}
