@@ -279,7 +279,7 @@ export default function InputZone() {
                       ? 'bg-blue-600 text-white'
                       : 'text-slate-500 hover:text-slate-300 border border-slate-700 hover:border-slate-600'}`}
                 >
-                  {m === 'paste' ? '📋 Paste' : '⚡ Live Query'}
+                  {m === 'paste' ? 'Paste' : 'Live Query'}
                 </button>
               ))}
               <span className="ml-3 text-[10px] text-slate-600">

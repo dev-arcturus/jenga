@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useRef, useState, useEffect, useMemo } from 'react';
+import { Suspense, useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, RoundedBox, Environment } from '@react-three/drei';
 import * as THREE from 'three';
@@ -11,11 +11,11 @@ import { useAnalysisStore } from '@/store';
 // Real Jenga Dimensions — 3 blocks per row, alternating 90°
 // ============================================================
 
-const BLOCK_W = 0.75;  // single block width
-const BLOCK_H = 0.28;  // height
-const BLOCK_D = 2.25;  // depth = 3 × width (3 blocks = full row)
-const ROW_GAP = 0.04;  // gap between rows
-const TOWER_SPACING = 4.0;
+const BLOCK_W = 0.75;
+const BLOCK_H = 0.28;
+const BLOCK_D = 2.25;
+const ROW_GAP = 0.04;
+const TOWER_SPACING = 4.5;
 
 // ============================================================
 // Color helpers
@@ -45,7 +45,21 @@ function stateEmissive(block: Block): string {
 }
 
 // ============================================================
-// Single 3D Jenga Block
+// Build a global block numbering map
+// ============================================================
+
+export function buildBlockNumberMap(towers: Tower[]): Map<string, { towerIdx: number; blockIdx: number }> {
+  const map = new Map<string, { towerIdx: number; blockIdx: number }>();
+  towers.forEach((tower, ti) => {
+    tower.blocks.forEach((block, bi) => {
+      map.set(block.block_id, { towerIdx: ti + 1, blockIdx: bi + 1 });
+    });
+  });
+  return map;
+}
+
+// ============================================================
+// Single 3D Jenga Block — clean numbered design
 // ============================================================
 
 interface JengaBlock3DProps {
@@ -56,25 +70,22 @@ interface JengaBlock3DProps {
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
   isSelected: boolean;
+  label: string; // e.g. "1.3"
 }
 
-function JengaBlock3D({ block, targetPos, rotation, entryDelay, onSelect, onRemove, isSelected }: JengaBlock3DProps) {
+function JengaBlock3D({ block, targetPos, rotation, entryDelay, onSelect, onRemove, isSelected, label }: JengaBlock3DProps) {
   const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const [entered, setEntered] = useState(false);
   const [falling, setFalling] = useState(false);
   const fallVel = useRef(0);
   const fallRot = useRef(0);
-  const birthTime = useRef(0);
 
-  // Staggered entry — block drops from above
   useEffect(() => {
-    birthTime.current = performance.now();
     const t = setTimeout(() => setEntered(true), entryDelay);
     return () => clearTimeout(t);
   }, [entryDelay]);
 
-  // Collapse / remove trigger
   useEffect(() => {
     if (block.state === 'collapsed' || block.state === 'removed') {
       const t = setTimeout(() => setFalling(true), 100);
@@ -102,19 +113,16 @@ function JengaBlock3D({ block, targetPos, rotation, entryDelay, onSelect, onRemo
     }
 
     if (!entered) {
-      // Waiting above
       g.position.set(targetPos[0], targetPos[1] + 4, targetPos[2]);
       g.scale.setScalar(1);
       return;
     }
 
-    // Smooth drop to target
     g.position.x += (targetPos[0] - g.position.x) * 0.1;
     g.position.y += (targetPos[1] - g.position.y) * 0.1;
     g.position.z += (targetPos[2] - g.position.z) * 0.1;
     g.scale.setScalar(1);
 
-    // Wobble blocks oscillate
     if (block.state === 'wobble') {
       const t = performance.now() * 0.001;
       g.rotation.z = Math.sin(t * 1.5 + entryDelay) * 0.035;
@@ -124,7 +132,6 @@ function JengaBlock3D({ block, targetPos, rotation, entryDelay, onSelect, onRemo
       g.rotation.x *= 0.92;
     }
 
-    // Hover lift
     if (hovered && !falling) {
       g.position.y += (targetPos[1] + 0.12 - g.position.y) * 0.15;
     }
@@ -133,7 +140,6 @@ function JengaBlock3D({ block, targetPos, rotation, entryDelay, onSelect, onRemo
   const color = stateColor(block);
   const emissive = stateEmissive(block);
   const opacity = block.state === 'removed' ? 0.15 : block.state === 'collapsed' ? 0.45 : 1;
-  const truncText = block.claim_text.length > 22 ? block.claim_text.slice(0, 22) + '…' : block.claim_text;
 
   return (
     <group
@@ -161,28 +167,17 @@ function JengaBlock3D({ block, targetPos, rotation, entryDelay, onSelect, onRemo
           />
         </RoundedBox>
 
-        {/* Label on top face */}
+        {/* Block number — small, centered on top */}
         <Text
           position={[0, BLOCK_H / 2 + 0.005, 0]}
           rotation={[-Math.PI / 2, 0, 0]}
-          fontSize={0.09}
-          color="#e2e8f0"
+          fontSize={0.14}
+          color="#ffffff"
           anchorX="center"
           anchorY="middle"
-          maxWidth={BLOCK_D - 0.1}
+          fontWeight={700}
         >
-          {truncText}
-        </Text>
-
-        {/* Score badge on front face */}
-        <Text
-          position={[0, 0, BLOCK_D / 2 + 0.005]}
-          fontSize={0.1}
-          color={block.stability_score >= 0.6 ? '#86efac' : block.stability_score >= 0.35 ? '#fcd34d' : '#fca5a5'}
-          anchorX="center"
-          anchorY="middle"
-        >
-          {block.stability_score > 0 ? block.stability_score.toFixed(2) : '…'}
+          {label}
         </Text>
 
         {/* Selection outline */}
@@ -207,61 +202,49 @@ interface JengaTower3DProps {
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
   selectedBlockId: string | null;
-  globalBlockOffset: number; // for staggered entry across towers
+  globalBlockOffset: number;
+  blockNumberMap: Map<string, { towerIdx: number; blockIdx: number }>;
 }
 
-function JengaTower3D({ tower, towerIndex, totalTowers, onSelect, onRemove, selectedBlockId, globalBlockOffset }: JengaTower3DProps) {
-  // Position tower
+function JengaTower3D({ tower, towerIndex, totalTowers, onSelect, onRemove, selectedBlockId, globalBlockOffset, blockNumberMap }: JengaTower3DProps) {
   const totalWidth = (totalTowers - 1) * TOWER_SPACING;
   const xCenter = towerIndex * TOWER_SPACING - totalWidth / 2;
 
-  // Sort blocks by stability — judge places stable blocks lower, weak blocks higher
   const sortedBlocks = useMemo(() => {
     return [...tower.blocks].sort((a, b) => {
-      // First by level (foundational first), then by score (stable first within level)
       if (a.level !== b.level) return a.level - b.level;
       return b.stability_score - a.stability_score;
     });
   }, [tower.blocks]);
 
-  // Real Jenga layout: 3 blocks per row, alternating direction
   const blockPlacements = useMemo(() => {
     const placements: { block: Block; pos: [number, number, number]; rot: [number, number, number]; delay: number }[] = [];
 
     sortedBlocks.forEach((block, idx) => {
-      const row = Math.floor(idx / 3);       // which row (0, 1, 2, ...)
-      const col = idx % 3;                    // position within row (0, 1, 2)
+      const row = Math.floor(idx / 3);
+      const col = idx % 3;
       const isEvenRow = row % 2 === 0;
-
       const y = row * (BLOCK_H + ROW_GAP);
 
       let pos: [number, number, number];
       let rot: [number, number, number];
 
       if (isEvenRow) {
-        // Blocks run along Z axis, spread along X
-        const x = (col - 1) * BLOCK_W;       // -0.75, 0, +0.75
+        const x = (col - 1) * BLOCK_W;
         pos = [xCenter + x, y, 0];
         rot = [0, 0, 0];
       } else {
-        // Blocks run along X axis (rotated 90°), spread along Z
         const z = (col - 1) * BLOCK_W;
         pos = [xCenter, y, z];
         rot = [0, Math.PI / 2, 0];
       }
 
-      placements.push({
-        block,
-        pos,
-        rot,
-        delay: (globalBlockOffset + idx) * 180, // stagger entry
-      });
+      placements.push({ block, pos, rot, delay: (globalBlockOffset + idx) * 180 });
     });
 
     return placements;
   }, [sortedBlocks, xCenter, globalBlockOffset]);
 
-  // Tower health
   const collapsed = tower.blocks.filter(b => b.state === 'collapsed' || b.state === 'removed').length;
   const health = 1 - collapsed / Math.max(tower.blocks.length, 1);
   const labelColor = health > 0.7 ? '#22c55e' : health > 0.4 ? '#f59e0b' : '#ef4444';
@@ -275,17 +258,16 @@ function JengaTower3D({ tower, towerIndex, totalTowers, onSelect, onRemove, sele
         </RoundedBox>
       </mesh>
 
-      {/* Label */}
+      {/* Tower number label */}
       <Text
         position={[xCenter, -0.28, 1.6]}
-        fontSize={0.15}
+        fontSize={0.18}
         color={labelColor}
         anchorX="center"
         anchorY="top"
-        maxWidth={3}
-        textAlign="center"
+        fontWeight={700}
       >
-        {tower.conclusion.length > 45 ? tower.conclusion.slice(0, 45) + '…' : tower.conclusion}
+        Tower {towerIndex + 1}
       </Text>
 
       <Text
@@ -295,10 +277,9 @@ function JengaTower3D({ tower, towerIndex, totalTowers, onSelect, onRemove, sele
         anchorX="center"
         anchorY="top"
       >
-        {tower.argument_id} · {tower.blocks.length} blocks · {Math.round(health * 100)}% standing
+        {tower.blocks.length} blocks | {Math.round(health * 100)}% health
       </Text>
 
-      {/* Collapse indicator — glowing red ring around the base when mostly collapsed */}
       {health < 0.4 && (
         <mesh position={[xCenter, -0.06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[1.3, 1.45, 32]} />
@@ -306,19 +287,23 @@ function JengaTower3D({ tower, towerIndex, totalTowers, onSelect, onRemove, sele
         </mesh>
       )}
 
-      {/* Jenga blocks */}
-      {blockPlacements.map(({ block, pos, rot, delay }) => (
-        <JengaBlock3D
-          key={block.block_id}
-          block={block}
-          targetPos={pos}
-          rotation={rot}
-          entryDelay={delay}
-          onSelect={onSelect}
-          onRemove={onRemove}
-          isSelected={selectedBlockId === block.block_id}
-        />
-      ))}
+      {blockPlacements.map(({ block, pos, rot, delay }) => {
+        const nums = blockNumberMap.get(block.block_id);
+        const lbl = nums ? `${nums.towerIdx}.${nums.blockIdx}` : '?';
+        return (
+          <JengaBlock3D
+            key={block.block_id}
+            block={block}
+            targetPos={pos}
+            rotation={rot}
+            entryDelay={delay}
+            onSelect={onSelect}
+            onRemove={onRemove}
+            isSelected={selectedBlockId === block.block_id}
+            label={lbl}
+          />
+        );
+      })}
     </group>
   );
 }
@@ -337,7 +322,7 @@ function Ground() {
 }
 
 // ============================================================
-// Camera controller — smoothly adjusts to fit all towers
+// Camera controller
 // ============================================================
 
 function CameraRig({ towerCount, maxBlocks }: { towerCount: number; maxBlocks: number }) {
@@ -366,11 +351,15 @@ export default function Tower3DScene() {
   const setSelectedBlock = useAnalysisStore(s => s.setSelectedBlock);
   const removeBlock = useAnalysisStore(s => s.removeBlock);
 
+  const blockNumberMap = useMemo(() => {
+    if (!towerGraph) return new Map();
+    return buildBlockNumberMap(towerGraph.towers);
+  }, [towerGraph]);
+
   if (!towerGraph || towerGraph.towers.length === 0) return null;
 
   const maxBlocks = Math.max(...towerGraph.towers.map(t => t.blocks.length), 0);
 
-  // Calculate global block offsets for staggered entry
   let cumulativeOffset = 0;
   const offsets = towerGraph.towers.map(t => {
     const off = cumulativeOffset;
@@ -390,7 +379,6 @@ export default function Tower3DScene() {
         <Suspense fallback={null}>
           <CameraRig towerCount={towerGraph.towers.length} maxBlocks={maxBlocks} />
 
-          {/* Lighting */}
           <ambientLight intensity={0.35} />
           <directionalLight
             position={[8, 12, 6]}
@@ -410,7 +398,6 @@ export default function Tower3DScene() {
           <Environment preset="city" />
           <Ground />
 
-          {/* Towers */}
           {towerGraph.towers.map((tower, i) => (
             <JengaTower3D
               key={tower.argument_id}
@@ -421,6 +408,7 @@ export default function Tower3DScene() {
               onRemove={removeBlock}
               selectedBlockId={selectedBlockId}
               globalBlockOffset={offsets[i]}
+              blockNumberMap={blockNumberMap}
             />
           ))}
 
@@ -439,12 +427,11 @@ export default function Tower3DScene() {
         </Suspense>
       </Canvas>
 
-      {/* Controls hint overlay */}
-      <div className="absolute bottom-3 left-3 flex gap-3 text-[10px] text-slate-600 pointer-events-none">
-        <span>🖱 Drag to orbit</span>
-        <span>⚙ Scroll to zoom</span>
-        <span>🔄 Right-click block to pull</span>
-        <span>👆 Click to inspect</span>
+      <div className="absolute bottom-3 left-3 flex gap-3 text-[10px] text-slate-600 font-mono pointer-events-none">
+        <span>Drag: orbit</span>
+        <span>Scroll: zoom</span>
+        <span>Right-click block: pull</span>
+        <span>Click: inspect</span>
       </div>
     </div>
   );
